@@ -120,6 +120,13 @@ Note that this variable takes effect only when
 (defvar ivy-rich-switch-buffer-buffer-size-length 7)
 (defvar ivy-rich-switch-buffer-indicator-length 4)
 
+(defface ivy-rich-indicators-face
+  '((((class color) (background light))
+     :foreground "red")
+    (((class color) (background dark))
+     :foreground "red"))
+  "Face used by Ivy Rich for highlighting the indictors string.")
+
 (defun ivy-rich-empty-p (str)
   (or (null str)
       (string-empty-p (string-trim str))))
@@ -190,7 +197,7 @@ or /a/…/f.el."
     (propertize
      (ivy-rich-switch-buffer-pad (format "%s%s%s%s" remote readonly modified process) ivy-rich-switch-buffer-indicator-length)
      'face
-     'error)))
+     'ivy-rich-indicators-face)))
 
 (defun ivy-rich-switch-buffer-size ()
   (let ((size (buffer-size)))
