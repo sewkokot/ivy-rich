@@ -131,15 +131,16 @@ Note that this variable takes effect only when
   (or (null str)
       (string-empty-p (string-trim str))))
 
-(defun ivy-rich-switch-buffer-pad (str len &optional left)
+(defun ivy-rich-pad (str len &optional left)
   "Use space to pad STR to LEN of length.
 
 When LEFT is not nil, pad from left side."
-  (let ((str-len (length str)))
+  (let ((str-len (string-width str)))
     (cond ((< str-len len)
            (if left
-               (concat (make-string (- len (length str)) ? ) str)
-             (concat str (make-string (- len (length str)) ? ))))
+               (concat (make-string (- len str-len) ? ) str)
+             (concat str (make-string (- len str-len) ? ))))
+          ((<= len (- str-len)) "")
           ((> str-len len)
            (format "%s…" (substring str 0 (1- len))))
           (t str))))
@@ -178,14 +179,14 @@ or /a/…/f.el."
    (cl-remove-if #'null columns)
    ivy-rich-switch-buffer-delimiter))
 
-(defun ivy-rich-switch-buffer-indicators (str)
+(defun ivy-rich-switch-buffer-indicators (candidate)
   (let ((modified (if (and (buffer-modified-p)
                            (ivy-rich-switch-buffer-excluded-modes-p '(dired-mode shell-mode))
-                           (ivy-rich-switch-buffer-user-buffer-p str))
+                           (ivy-rich-switch-buffer-user-buffer-p candidate))
                       "*"
                     ""))
         (readonly (if (and buffer-read-only
-                           (ivy-rich-switch-buffer-user-buffer-p str))
+                           (ivy-rich-switch-buffer-user-buffer-p candidate))
                       "!"
                     ""))
         (process (if (get-buffer-process (current-buffer))
@@ -195,28 +196,28 @@ or /a/…/f.el."
                     "@"
                   "")))
     (propertize
-     (ivy-rich-switch-buffer-pad (format "%s%s%s%s" remote readonly modified process) ivy-rich-switch-buffer-indicator-length)
+     (ivy-rich-pad (format "%s%s%s%s" remote readonly modified process) ivy-rich-switch-buffer-indicator-length)
      'face
      'ivy-rich-indicators-face)))
 
 (defun ivy-rich-switch-buffer-size ()
   (let ((size (buffer-size)))
-    (ivy-rich-switch-buffer-pad
+    (ivy-rich-pad
      (cond
       ((> size 1000000) (format "%.1fM " (/ size 1000000.0)))
       ((> size 1000) (format "%.1fk " (/ size 1000.0)))
       (t (format "%d " size)))
      ivy-rich-switch-buffer-buffer-size-length t)))
 
-(defun ivy-rich-switch-buffer-buffer-name (str)
+(defun ivy-rich-switch-buffer-buffer-name (candidate)
   (propertize
-   (ivy-rich-switch-buffer-pad str ivy-rich-switch-buffer-name-max-length)
+   (ivy-rich-pad candidate ivy-rich-switch-buffer-name-max-length)
    'face
    'ivy-modified-buffer))
 
 (defun ivy-rich-switch-buffer-major-mode ()
   (propertize
-   (ivy-rich-switch-buffer-pad
+   (ivy-rich-pad
     (capitalize
      (replace-regexp-in-string "-" " " (replace-regexp-in-string "-mode" "" (symbol-name major-mode))))
     ivy-rich-switch-buffer-mode-max-length)
@@ -229,7 +230,7 @@ or /a/…/f.el."
                (not ivy-rich-parse-remote-buffer)))
       nil
     (propertize
-     (ivy-rich-switch-buffer-pad
+     (ivy-rich-pad
       (if (string= (projectile-project-name) "-")
           ""
         (projectile-project-name))
@@ -252,7 +253,7 @@ or /a/…/f.el."
             ;; Workaround for `browse-url-emacs' buffers , it changes
             ;; `default-directory' to "http://" (#25)
             (string-match "https?:\\/\\/" default-directory))
-        (ivy-rich-switch-buffer-pad "" path-max-length)
+        (ivy-rich-pad "" path-max-length)
       (let* (;; Find the project root directory or `default-directory'
              (root (file-truename
                     (if (or (not project)
@@ -281,13 +282,13 @@ or /a/…/f.el."
                           (if (and filename root)
                               (substring-no-properties (string-remove-prefix root filename))
                             "")))))
-        (ivy-rich-switch-buffer-pad
+        (ivy-rich-pad
          (ivy-rich-switch-buffer-shorten-path path path-max-length)
          path-max-length)))))
 
-(defun ivy-rich-switch-buffer-virtual-buffer (str)
-  (let* ((filename (file-name-nondirectory (expand-file-name str)))
-         (filename (ivy-rich-switch-buffer-pad
+(defun ivy-rich-switch-buffer-virtual-buffer (candidate)
+  (let* ((filename (file-name-nondirectory (expand-file-name candidate)))
+         (filename (ivy-rich-pad
                     filename
                     (+ ivy-rich-switch-buffer-name-max-length
                        ivy-rich-switch-buffer-indicator-length
@@ -296,34 +297,58 @@ or /a/…/f.el."
                        (if (bound-and-true-p projectile-mode) ivy-rich-switch-buffer-project-max-length 0)
                        (* 4 (length ivy-rich-switch-buffer-delimiter)))))
          (filename (propertize filename 'face 'ivy-virtual))
-         (path (file-name-directory str))
+         (path (file-name-directory candidate))
          (path (ivy-rich-switch-buffer-shorten-path path (- (window-width (minibuffer-window)) (length filename))))
-         (path (ivy-rich-switch-buffer-pad path (- (window-width (minibuffer-window))
-                                                   (length filename)
-                                                   2)))  ; Fixed the unexpected wrapping in terminal
+         (path (ivy-rich-pad path (- (window-width (minibuffer-window))
+                                     (length filename)
+                                     2)))  ; Fixed the unexpected wrapping in terminal
          (path (propertize path 'face 'ivy-virtual)))
     (ivy-rich-switch-buffer-format `(,filename ,path))))
 
 ;;;###autoload
-(defun ivy-rich-switch-buffer-transformer (str)
-  "Transform STR to more readable format.
+(defun ivy-rich-switch-buffer-transformer (candidate)
+  "Transform CANDIDATE to more readable format.
 
 Currently the transformed format is
 
 | Buffer name | Buffer indicators | Major mode | Project | Path (Based on project root) |."
-  (let ((buf (get-buffer str)))
+  (let ((buf (get-buffer candidate)))
     (cond (buf (with-current-buffer buf
-                 (let* ((indicator  (ivy-rich-switch-buffer-indicators str))
+                 (let* ((indicator  (ivy-rich-switch-buffer-indicators candidate))
                         (size       (ivy-rich-switch-buffer-size))
-                        (buf-name   (ivy-rich-switch-buffer-buffer-name str))
+                        (buf-name   (ivy-rich-switch-buffer-buffer-name candidate))
                         (mode       (ivy-rich-switch-buffer-major-mode))
                         (project    (ivy-rich-switch-buffer-project))
                         (path       (ivy-rich-switch-buffer-path project)))
                    (ivy-rich-switch-buffer-format `(,buf-name ,size ,indicator ,mode ,project ,path)))))
           ((and (eq ivy-virtual-abbreviate 'full)
                 ivy-rich-switch-buffer-align-virtual-buffer)
-           (ivy-rich-switch-buffer-virtual-buffer str))
-          (t str))))
+           (ivy-rich-switch-buffer-virtual-buffer candidate))
+          (t candidate))))
+
+
+;; Utilities for setting and unsetting the transformers
+(defvar ivy-rich--original-display-transformers-list nil)  ; Backup list
+
+(defun ivy-rich-set-display-transformer (cmd transformer)
+  (setq ivy-rich--original-display-transformers-list
+        (plist-put
+         ivy-rich--original-display-transformers-list cmd (plist-get ivy--display-transformers-list cmd)))
+  (ivy-set-display-transformer cmd transformer))
+
+(defun ivy-rich-unset-display-transformer (cmd)
+  (ivy-set-display-transformer
+   cmd
+   (plist-get ivy-rich--original-display-transformers-list cmd)))
+
+;;;###autoload
+(define-minor-mode ivy-rich-mode
+  "Toggle ivy-rich mode globally."
+  :global t
+  (if ivy-rich-mode
+      (ivy-rich-set-display-transformer 'ivy-switch-buffer 'ivy-rich-switch-buffer-transformer)
+    (ivy-rich-unset-display-transformer 'ivy-switch-buffer)
+    (setq ivy-rich--original-display-transformers-list nil)))
 
 (provide 'ivy-rich)
 
